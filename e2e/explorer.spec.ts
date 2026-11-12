@@ -1,0 +1,51 @@
+import { test,expect } from '@playwright/test';
+test('랙 전환, 칸 선택, 필터와 상세 재열기',async({page})=>{
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByRole('heading',{name:'창고를 한눈에.'})).toBeVisible();
+  await expect(page.locator('[data-testid="rack-scene"] canvas')).toBeVisible();
+  await page.getByRole('button',{name:'2열 · 1행 · 4단',exact:true}).click();
+  await expect(page.locator('.selection strong')).toHaveText('A-01 / 2열 · 1행 · 4단');
+  await page.locator('.rack-card').filter({hasText:'B-01'}).click();
+  await expect(page.locator('.selection strong')).toHaveText('칸을 선택해 주세요');
+  await expect(page.locator('.bin')).toHaveCount(12);
+  await page.getByLabel('행 필터').selectOption('2');
+  await expect(page.locator('.bin')).toHaveCount(6);
+  await page.getByRole('button',{name:'2열 · 2행 · 3단',exact:true}).click();
+  await expect(page.locator('.selection strong')).toHaveText('B-01 / 2열 · 2행 · 3단');
+  await page.getByRole('button',{name:'확대',exact:true}).click();
+  await expect(page.locator('.zoom-tools span')).toHaveText('120%');
+  await page.getByRole('button',{name:'상세 닫기'}).click();
+  await expect(page.getByRole('heading',{name:'랙을 선택해 주세요'})).toBeVisible();
+  await page.locator('.rack-card').filter({hasText:'A-01'}).click();
+  await expect(page.locator('.zoom-tools span')).toHaveText('120%');
+  await expect(page.locator('[data-testid="rack-scene"] canvas')).toBeVisible();
+  await page.screenshot({path:'test-results/explorer-desktop.png',fullPage:true});
+  expect(errors).toEqual([]);
+});
+test('작은 화면에서 목록으로 랙과 칸 선택',async({page})=>{
+  await page.setViewportSize({width:390,height:844});await page.goto('/');
+  await page.locator('.rack-card').filter({hasText:'B-01'}).click();
+  await page.getByRole('button',{name:'1열 · 2행 · 1단',exact:true}).click();
+  await expect(page.locator('.selection strong')).toHaveText('B-01 / 1열 · 2행 · 1단');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.screenshot({path:'test-results/explorer-mobile.png',fullPage:true});
+});
+test('평면도와 3D 캔버스에서 직접 선택',async({page})=>{
+  await page.goto('/');
+  const plan=page.locator('.canvas-host canvas');
+  const bounds=(await plan.boundingBox())!;
+  const scale=Math.min((bounds.width-100)/14000,(bounds.height-120)/10000);
+  const ox=(bounds.width-14000*scale)/2,oy=(bounds.height-10000*scale)/2;
+  await plan.click({position:{x:ox+9200*scale,y:oy+5500*scale}});
+  await expect(page.locator('.detail h2')).toContainText('B-01');
+  await plan.click({position:{x:ox+3800*scale,y:oy+3100*scale}});
+  await expect(page.locator('.detail h2')).toContainText('A-01');
+  const scene=page.locator('[data-testid="rack-scene"] canvas');
+  await expect(scene).toBeVisible();
+  // Wait until the lazily created scene has painted before raycast selection.
+  await page.waitForTimeout(400);
+  await scene.click({position:{x:140,y:160}});
+  await expect(page.locator('.selection strong')).toContainText('A-01 /');
+  await page.screenshot({path:'test-results/explorer-selected-bin.png',fullPage:true});
+});
